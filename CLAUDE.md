@@ -57,15 +57,22 @@ The codebase is organized into distinct modules with clear separation of concern
 
 The protocol uses ASK/OOK modulation at 433.92 MHz with Manchester-like encoding:
 
-- **Timing**: Based on 250µs time element (TE)
-  - Sync: 5:3 ratio (1250µs high, 750µs low)
-  - Bit 1: 3:1 ratio (750µs high, 250µs low)
-  - Bit 0: 1:3 ratio (250µs high, 750µs low)
+- **Timing** (defaults, from the OpenShock reference encoder; `CaixianlinTiming` in caixianlin_types.h):
+  - Sync: 1400µs high, 750µs low
+  - Bit 1: 750µs high, 250µs low
+  - Bit 0: 250µs high, 750µs low
+  - 3 trailing 0 bits after the checksum
+  - Listen mode measures the captured remote's timings (with a correction for the
+    demodulator's edge shift) and trailing-bit count into `rx_capture.captured_timing`;
+    applying the capture copies them to `app->timing`, which the encoder uses and
+    storage persists.
 
-- **Packet Structure** (42 bits total):
+- **Packet Structure** (40 data bits + trailing zeros):
   ```
-  [SYNC] [STATION_ID:16] [CHANNEL:4] [MODE:4] [STRENGTH:8] [CHECKSUM:8] [END:2]
+  [SYNC] [STATION_ID:16] [CHANNEL:4] [MODE:4] [STRENGTH:8] [CHECKSUM:8] [END:n]
   ```
+  Checksum = 8-bit sum of the four payload bytes, where channel and mode share one
+  byte (`(channel << 4) | mode`). Strength is 0-99 and is sent as 0 for beep.
 
 - **TX Path**: `caixianlin_protocol_encode_message()` builds the signal buffer as `LevelDuration` pairs, then `caixianlin_radio_start_tx()` transmits via async TX callback
 
@@ -73,9 +80,9 @@ The protocol uses ASK/OOK modulation at 433.92 MHz with Manchester-like encoding
 
 ### State Management
 
-The `CaixianlinRemoteApp` struct (caixianlin_types.h:68-92) is the central state container, holding:
+The `CaixianlinRemoteApp` struct (caixianlin_types.h:93-120) is the central state container, holding:
 - Radio device handle
-- Current transmission parameters (station_id, channel, mode, strength)
+- Current transmission parameters (station_id, channel, mode, strength, timing)
 - TX state (signal buffer)
 - RX capture state (stream buffer, work buffer, decoded values)
 - UI state (current screen, selection indices)
@@ -85,7 +92,7 @@ All modules receive a pointer to this struct and operate on shared state.
 
 ### Settings Persistence
 
-Station ID and channel are saved to `/ext/apps_data/caixianlin_remote/settings.txt` using the Flipper storage API (caixianlin_storage.c). Settings are loaded on startup and saved whenever changed in the setup screen.
+Station ID, channel and the TX timings are saved to `/ext/apps_data/caixianlin_remote/settings.txt` as one comma-separated line using the Flipper storage API (caixianlin_storage.c). Files from older versions that only hold ID and channel still load; the timings then stay at the defaults. Settings are loaded on startup and saved whenever changed in the setup screen.
 
 ## Key Implementation Details
 

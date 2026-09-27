@@ -143,19 +143,42 @@ void caixianlin_ui_draw(Canvas* canvas, void* ctx) {
         char buf[32];
         canvas_set_font(canvas, FontSecondary);
 
-        // Draw progress bar for buffer
-        canvas_draw_str(canvas, 2, 25, "Buffer:");
-        int buffer_percent = (app->rx_capture.work_buffer_len * 100) / WORK_BUFFER_SIZE;
-        if(buffer_percent > 100) buffer_percent = 100;
-        draw_progress_bar(canvas, 42, 18, 80, 6, buffer_percent, true);
+        if(app->rx_capture.capture_valid) {
+            // Show the timings measured from the remote; Apply makes them the TX timings
+            const CaixianlinTiming* t = &app->rx_capture.captured_timing;
+            snprintf(
+                buf,
+                sizeof(buf),
+                "Sync %u/%u End %u",
+                (unsigned)t->sync_high_us,
+                (unsigned)t->sync_low_us,
+                (unsigned)t->end_bits);
+            canvas_draw_str(canvas, 2, 25, buf);
+            snprintf(
+                buf,
+                sizeof(buf),
+                "Bit %u/%u %u/%u",
+                (unsigned)t->one_high_us,
+                (unsigned)t->one_low_us,
+                (unsigned)t->zero_high_us,
+                (unsigned)t->zero_low_us);
+            canvas_draw_str(canvas, 2, 34, buf);
+        } else {
+            // Draw progress bar for buffer
+            canvas_draw_str(canvas, 2, 25, "Buffer:");
+            int buffer_percent = (app->rx_capture.work_buffer_len * 100) / WORK_BUFFER_SIZE;
+            if(buffer_percent > 100) buffer_percent = 100;
+            draw_progress_bar(canvas, 42, 18, 80, 6, buffer_percent, true);
 
-        // Draw progress bar for queue
-        canvas_draw_str(canvas, 2, 34, "Queue:");
-        size_t queue_available = furi_stream_buffer_bytes_available(app->rx_capture.stream_buffer);
-        queue_available /= sizeof(int32_t);
-        int queue_percent = (queue_available * 100) / RX_BUFFER_SIZE;
-        if(queue_percent > 100) queue_percent = 100;
-        draw_progress_bar(canvas, 42, 27, 80, 6, queue_percent, true);
+            // Draw progress bar for queue
+            canvas_draw_str(canvas, 2, 34, "Queue:");
+            size_t queue_available =
+                furi_stream_buffer_bytes_available(app->rx_capture.stream_buffer);
+            queue_available /= sizeof(int32_t);
+            int queue_percent = (queue_available * 100) / RX_BUFFER_SIZE;
+            if(queue_percent > 100) queue_percent = 100;
+            draw_progress_bar(canvas, 42, 27, 80, 6, queue_percent, true);
+        }
 
         // Show last decoded message if available
         if(app->rx_capture.capture_valid) {
@@ -218,6 +241,9 @@ void caixianlin_ui_draw(Canvas* canvas, void* ctx) {
         if(app->is_transmitting) {
             canvas_set_font(canvas, FontPrimary);
             status = "[ Transmitting! ]";
+        } else if(app->tx_failed) {
+            canvas_set_font(canvas, FontPrimary);
+            status = "[ TX failed! ]";
         } else {
             canvas_set_font(canvas, FontSecondary);
             status = "[ Hold OK to transmit ]";
@@ -258,11 +284,20 @@ static void handle_setup_input(CaixianlinRemoteApp* app, InputEvent* event) {
                 app->editing_station_id = false;
                 caixianlin_storage_save(app);
             } else if(event->key == InputKeyBack) {
+                // Cancel: put back the value from before the edit
+                app->station_id = app->station_id_backup;
                 app->editing_station_id = false;
             }
         }
     } else {
         // Normal setup navigation
+        if(event->type == InputTypeLong && event->key == InputKeyOk && app->setup_selected == 2) {
+            // Hold OK on "Listen for Remote": forget learned timings, back to defaults
+            caixianlin_timing_set_default(&app->timing);
+            caixianlin_storage_save(app);
+            notification_message(app->notifications, &sequence_success);
+            return;
+        }
         if(event->type == InputTypeShort) {
             if(event->key == InputKeyUp) {
                 if(app->setup_selected > 0) app->setup_selected--;
@@ -280,6 +315,7 @@ static void handle_setup_input(CaixianlinRemoteApp* app, InputEvent* event) {
                 }
             } else if(event->key == InputKeyOk) {
                 if(app->setup_selected == 0) {
+                    app->station_id_backup = app->station_id;
                     app->editing_station_id = true;
                     app->station_id_digit = 0;
                 } else if(app->setup_selected == 2) {
@@ -303,6 +339,10 @@ static void handle_listen_input(CaixianlinRemoteApp* app, InputEvent* event) {
             if(app->rx_capture.capture_valid) {
                 app->station_id = app->rx_capture.captured_station_id;
                 app->channel = app->rx_capture.captured_channel;
+                // Transmit with the timings this remote uses
+                if(caixianlin_timing_is_valid(&app->rx_capture.captured_timing)) {
+                    app->timing = app->rx_capture.captured_timing;
+                }
                 caixianlin_storage_save(app);
 
                 // Stop listening and return to setup
@@ -346,16 +386,16 @@ static void handle_main_input(CaixianlinRemoteApp* app, InputEvent* event) {
                 app->mode = 3;
             }
         } else if(event->key == InputKeyUp && app->mode != MODE_BEEP) {
-            if(app->strength < 100) app->strength++;
+            if(app->strength < MAX_STRENGTH) app->strength++;
         } else if(event->key == InputKeyDown && app->mode != MODE_BEEP) {
             if(app->strength > 0) app->strength--;
         }
     } else if(event->type == InputTypeRepeat) {
         if(event->key == InputKeyUp && app->mode != MODE_BEEP) {
-            if(app->strength < 90) {
+            if(app->strength + 10 < MAX_STRENGTH) {
                 app->strength += 10;
             } else {
-                app->strength = 100;
+                app->strength = MAX_STRENGTH;
             }
         } else if(event->key == InputKeyDown && app->mode != MODE_BEEP) {
             if(app->strength > 10) {

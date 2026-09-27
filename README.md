@@ -11,10 +11,10 @@ A Flipper Zero application to control CaiXianlin shock collar.
 ## Features
 
 - **Send** shock, vibrate, or beep commands
-- **Adjustable strength** (0–100)
+- **Adjustable strength** (0–99)
 - **Channels** (0–2)
-- **Clone/Listen mode** – Capture Station ID and channel from an existing remote controller / hub
-- **Persistent settings** – Station ID and channel are saved
+- **Clone/Listen mode** – Capture Station ID, channel and the exact pulse timings from an existing remote controller / hub, so transmissions match what that remote sends
+- **Persistent settings** – Station ID, channel and learned timings are saved
 
 ## Controls
 
@@ -24,7 +24,7 @@ A Flipper Zero application to control CaiXianlin shock collar.
 |------------------|----------------------------------|
 | **OK (hold)**    | Transmit signal                  |
 | **←** / **→**    | Change mode (Shock/Vibrate/Beep) |
-| **↑** / **↓**    | Adjust strength (0–100)          |
+| **↑** / **↓**    | Adjust strength (0–99)           |
 | **Back (short)** | Exit app                         |
 | **Back (hold)**  | Open setup screen                |
 
@@ -32,10 +32,22 @@ A Flipper Zero application to control CaiXianlin shock collar.
 
 | Button        | Action                         |
 |---------------|--------------------------------|
-| **↑** / **↓** | Navigate menu                  |
-| **←** / **→** | Change channel (when selected) |
-| **OK**        | Select option                  |
-| **Back**      | Return to main screen          |
+| **↑** / **↓** | Navigate menu                                              |
+| **←** / **→** | Change channel (when selected)                             |
+| **OK**        | Select option                                              |
+| **OK (hold)** | On *Listen for Remote*: forget learned timings (defaults)  |
+| **Back**      | Return to main screen                                      |
+
+**Cloning tips:**
+
+- While listening, press the button on the remote that actually controls your collar. On some
+  remotes every channel button is a different Station ID.
+- The Listen screen shows the measured pulse timings (`Sync`, `Bit`, `End`). Press **OK** to apply
+  them together with the Station ID and channel; they are used for every transmission from then on.
+- If the collar still ignores the Flipper, pair the collar to it instead: hold the collar's power
+  button until its LED flashes fast, then send **Beep** from the app. The collar beeps once paired.
+- `[ TX failed! ]` on the main screen means the radio refused to transmit (missing radio or a region
+  lock that forbids 433.92 MHz), not that the collar ignored the packet.
 
 ## Protocol Specification
 
@@ -47,24 +59,27 @@ A Flipper Zero application to control CaiXianlin shock collar.
 | Modulation | ASK/OOK                        |
 | Preset     | FuriHalSubGhzPresetOok270Async |
 
-**Bit Encoding:**
+**Bit Encoding (defaults):**
 
-| Element | HIGH Duration   | LOW Duration   | Ratio |
-|---------|-----------------|----------------|-------|
-| Sync    | ~1250 µs (5 TE) | ~750 µs (3 TE) | 5:3   |
-| Bit 1   | ~750 µs (3 TE)  | ~250 µs (1 TE) | 3:1   |
-| Bit 0   | ~250 µs (1 TE)  | ~750 µs (3 TE) | 1:3   |
+| Element | HIGH Duration | LOW Duration |
+|---------|---------------|--------------|
+| Sync    | ~1400 µs      | ~750 µs      |
+| Bit 1   | ~750 µs       | ~250 µs      |
+| Bit 0   | ~250 µs       | ~750 µs      |
 
-Where TE (Time Element) ≈ 250 µs
+The defaults follow the OpenShock reference encoder. Remotes differ slightly (sync pulses of
+1250–1500 µs and 2 or 3 trailing bits have been seen), and some collars are picky about it, so
+**Listen for Remote** measures the pulse timings and the trailing-bit count of the captured remote
+and uses those for transmission once you apply the capture. The measured values are shown on the
+Listen screen.
 
 Based on [https://wiki.openshock.org/hardware/shockers/caixianlin](https://wiki.openshock.org/hardware/shockers/caixianlin)
-and captured signals from the controller hub. The app is using integer ratios matching the behavior of a real
-controller, rather than strictly following the protocol as specified in the wiki.
+and captured signals from real remotes and controller hubs.
 
-**Packet Structure (42 bits):**
+**Packet Structure (40 data bits + trailing zeros):**
 
 ```
-[SYNC] [STATION_ID:16] [CHANNEL:4] [MODE:4] [STRENGTH:8] [CHECKSUM:8] [END:2]
+[SYNC] [STATION_ID:16] [CHANNEL:4] [MODE:4] [STRENGTH:8] [CHECKSUM:8] [END:3]
 ```
 
 | Field      | Bits | Range   | Description                                    |
@@ -72,15 +87,17 @@ controller, rather than strictly following the protocol as specified in the wiki
 | Station ID | 16   | 0-65535 | Transmitter identifier (collar paired to this) |
 | Channel    | 4    | 0-2     | Channel number                                 |
 | Mode       | 4    | 1-3     | 1=Shock, 2=Vibrate, 3=Beep                     |
-| Strength   | 8    | 0-100   | Intensity (should be 0 for Beep)               |
-| Checksum   | 8    | 0-255   | 8-bit sum of all preceding bytes               |
-| End        | 2    | 00      | Always 00                                      |
+| Strength   | 8    | 0-99    | Intensity (sent as 0 for Beep)                 |
+| Checksum   | 8    | 0-255   | 8-bit sum of the four preceding bytes          |
+| End        | 3    | 000     | Trailing 0 bits (count learned from remote)    |
 
 **Checksum Calculation:**
 
 ```c
-checksum = (STATION_ID_high_byte + STATION_ID_low_byte + Channel + Mode + Strength) & 0xFF
+checksum = (STATION_ID_high_byte + STATION_ID_low_byte + ((Channel << 4) | Mode) + Strength) & 0xFF
 ```
+
+Channel and mode share one byte, with the channel in the high nibble.
 
 ## First Launch
 

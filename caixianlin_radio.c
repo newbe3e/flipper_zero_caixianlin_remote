@@ -51,7 +51,14 @@ LevelDuration caixianlin_radio_tx_callback(void* context) {
 
 // Start transmission
 void caixianlin_radio_start_tx(CaixianlinRemoteApp* app) {
-    if(app->is_transmitting || !app->radio_device) return;
+    if(app->is_transmitting) return;
+
+    if(!app->radio_device) {
+        FURI_LOG_E(TAG, "No radio device");
+        app->tx_failed = true;
+        notification_message(app->notifications, &sequence_error);
+        return;
+    }
 
     FURI_LOG_I(
         TAG, "TX: ID=%d CH=%d M=%d S=%d", app->station_id, app->channel, app->mode, app->strength);
@@ -60,10 +67,16 @@ void caixianlin_radio_start_tx(CaixianlinRemoteApp* app) {
     subghz_devices_idle(app->radio_device);
 
     if(!subghz_devices_start_async_tx(app->radio_device, caixianlin_radio_tx_callback, app)) {
+        // The HAL refuses silently when the region lock forbids transmitting on
+        // this frequency; tell the user instead of pretending to transmit
         FURI_LOG_E(TAG, "Failed to start TX");
+        app->tx_failed = true;
+        notification_message(app->notifications, &sequence_error);
         return;
     }
 
+    app->tx_failed = false;
+    app->tx_start_tick = furi_get_tick();
     app->is_transmitting = true;
     notification_message(app->notifications, &sequence_set_red_255);
 }
@@ -71,6 +84,13 @@ void caixianlin_radio_start_tx(CaixianlinRemoteApp* app) {
 // Stop transmission
 void caixianlin_radio_stop_tx(CaixianlinRemoteApp* app) {
     if(!app->is_transmitting) return;
+
+    // A quick tap would otherwise cut the carrier before one packet completes
+    uint32_t min_ticks = furi_ms_to_ticks(TX_MIN_BURST_MS);
+    uint32_t elapsed = furi_get_tick() - app->tx_start_tick;
+    if(elapsed < min_ticks) {
+        furi_delay_tick(min_ticks - elapsed);
+    }
 
     subghz_devices_stop_async_tx(app->radio_device);
     subghz_devices_idle(app->radio_device);
@@ -101,6 +121,7 @@ void caixianlin_radio_start_rx(CaixianlinRemoteApp* app) {
     app->rx_capture.work_buffer_len = 0;
     app->rx_capture.processed = 0;
     app->rx_capture.capture_valid = false;
+    caixianlin_timing_set_default(&app->rx_capture.captured_timing);
 
     subghz_devices_idle(app->radio_device);
     subghz_devices_start_async_rx(app->radio_device, caixianlin_radio_rx_callback, app);

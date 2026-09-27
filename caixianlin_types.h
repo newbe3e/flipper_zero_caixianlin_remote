@@ -13,32 +13,51 @@
 // Settings file path
 #define SETTINGS_PATH APP_DATA_PATH("settings.txt")
 
-// Protocol timing constants (microseconds)
-// Based on analysis of working recordings - uses 3:1 and 1:3 ratios
+// Default protocol timings (microseconds). These follow the OpenShock reference
+// encoder and logic-analyzer captures of real remotes. Listen mode measures the
+// timings of the captured remote and those are used for transmission instead.
 #define TE_US         250
-#define SYNC_HIGH_US  (5 * TE_US) // 1250
+#define SYNC_HIGH_US  1400
 #define SYNC_LOW_US   (3 * TE_US) // 750
 #define BIT_1_HIGH_US (3 * TE_US) // 750
 #define BIT_1_LOW_US  (1 * TE_US) // 250
 #define BIT_0_HIGH_US (1 * TE_US) // 250
 #define BIT_0_LOW_US  (3 * TE_US) // 750
 
-#define PACKET_BITS        42
-#define SIGNAL_LENGTH      ((PACKET_BITS * 2) + 2) // 42 bits (high+low pairs) + 2 sync (high+low)
-#define SIGNAL_BUFFER_SIZE 128
-#define WORK_BUFFER_SIZE   512
+// Sanity bounds for learned / stored timings
+#define TIMING_MIN_US      50
+#define TIMING_MAX_US      5000
+#define TIMING_BIAS_MAX_US 150 // largest demodulator edge shift we try to undo
 
-// For RX capture
+// Packet layout:
+// [SYNC] [STATION_ID:16] [CHANNEL:4] [MODE:4] [STRENGTH:8] [CHECKSUM:8] [END:n]
+#define PACKET_DATA_BITS    40
+#define PACKET_END_BITS     3 // trailing 0 bits sent by the reference encoder
+#define PACKET_END_BITS_MAX 8
+#define PACKET_MIN_SAMPLES  (2 + PACKET_DATA_BITS * 2) // sync pair + one HIGH/LOW pair per data bit
+#define SIGNAL_BUFFER_SIZE  128 // >= 2 + 2 * (PACKET_DATA_BITS + PACKET_END_BITS_MAX)
+#define WORK_BUFFER_SIZE    512
+
+#define MAX_STRENGTH 99 // the protocol intensity range is 0-99
+
+// For RX capture. A sync pulse is recognised by its long HIGH; the LOW window is
+// wide because remotes use 500-800us here and the demodulator shifts edges.
 #define RX_BUFFER_SIZE   2048
 #define SYNC_HIGH_MIN_US 1000
 #define SYNC_HIGH_MAX_US 1800
-#define SYNC_LOW_MIN_US  500
+#define SYNC_LOW_MIN_US  350
 #define SYNC_LOW_MAX_US  1200
 
 // Modes
 #define MODE_SHOCK   1
 #define MODE_VIBRATE 2
 #define MODE_BEEP    3
+#define MODE_LIGHT   4 // sent by some remotes; not selectable in this app
+#define MODE_MAX     MODE_LIGHT
+
+// Keep transmitting at least this long so a quick tap still puts a few complete
+// packets on air (one packet is ~45 ms; the reference remotes repeat it ~5 times)
+#define TX_MIN_BURST_MS 250
 
 // App screens
 typedef enum {
@@ -46,6 +65,17 @@ typedef enum {
     ScreenMain,
     ScreenListen,
 } AppScreen;
+
+// Pulse timings used to build a packet
+typedef struct {
+    uint16_t sync_high_us;
+    uint16_t sync_low_us;
+    uint16_t one_high_us;
+    uint16_t one_low_us;
+    uint16_t zero_high_us;
+    uint16_t zero_low_us;
+    uint8_t end_bits; // trailing 0 bits after the checksum
+} CaixianlinTiming;
 
 // Transmission state
 typedef struct {
@@ -62,6 +92,7 @@ typedef struct {
     size_t processed; // Number of samples processed
     uint16_t captured_station_id;
     uint8_t captured_channel;
+    CaixianlinTiming captured_timing; // Timings measured from the last decoded packet
     bool capture_valid;
 } RxCapture;
 
@@ -77,11 +108,14 @@ typedef struct {
     uint8_t channel;
     uint8_t mode;
     uint8_t strength;
+    CaixianlinTiming timing; // Timings used for transmission
 
     TxState tx_state;
     RxCapture rx_capture;
 
     bool is_transmitting;
+    bool tx_failed; // last TX start was refused (no radio / region lock)
+    uint32_t tx_start_tick;
     bool is_listening;
     bool running;
 
@@ -89,6 +123,7 @@ typedef struct {
     int setup_selected; // 0=Station ID, 1=Channel, 2=Listen, 3=Done
     int station_id_digit; // Which digit being edited (0-4)
     bool editing_station_id;
+    uint16_t station_id_backup; // Restored when a Station ID edit is cancelled
 
     uint32_t frame_counter; // For UI animations
 } CaixianlinRemoteApp;
@@ -96,5 +131,11 @@ typedef struct {
 extern const char* mode_names[4];
 
 void app_init(CaixianlinRemoteApp* app);
+
+// Reset timings to the protocol defaults
+void caixianlin_timing_set_default(CaixianlinTiming* timing);
+
+// Check that every timing is inside the sanity bounds (safe to transmit)
+bool caixianlin_timing_is_valid(const CaixianlinTiming* timing);
 
 #endif // CAIXIANLIN_TYPES_H
