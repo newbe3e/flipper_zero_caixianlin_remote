@@ -14,7 +14,8 @@ A Flipper Zero application to control CaiXianlin shock collar.
 - **Adjustable strength** (0–99)
 - **Channels** (0–2)
 - **Clone/Listen mode** – Capture Station ID, channel and the exact pulse timings from an existing remote controller / hub, so transmissions match what that remote sends
-- **Persistent settings** – Station ID, channel and learned timings are saved
+- **Haptic feedback with shock cutoff** – The Flipper vibrates while it transmits a shock. Collars cut a continuous shock after a few seconds (typically 10) even if the button stays pressed, so set *Shock max* to your collar's cutoff: when it elapses the vibration stops and the Flipper also stops transmitting, exactly like the remote, until you press OK again (the screen shows *Shock timed out*). The *Vibration* setting picks the strength (off, 25, 50, 75 or 100 %: the share of time the motor is powered, so the felt strength is not exactly linear); it works independently of the Flipper's system *Vibro* setting but is muted in stealth mode
+- **Persistent settings** – Station ID, channel, learned timings, shock cutoff and vibration strength are saved
 
 ## Controls
 
@@ -33,10 +34,10 @@ A Flipper Zero application to control CaiXianlin shock collar.
 | Button        | Action                         |
 |---------------|--------------------------------|
 | **↑** / **↓** | Navigate menu                                              |
-| **←** / **→** | Change channel (when selected)                             |
+| **←** / **→** | Change channel, *Shock max* or *Vibration* (when selected)  |
 | **OK**        | Select option                                              |
 | **OK (hold)** | On *Listen for Remote*: forget learned timings (defaults)  |
-| **Back**      | Return to main screen                                      |
+| **Back**      | Exit app (while editing the Station ID: cancel the edit)   |
 
 **Cloning tips:**
 
@@ -104,8 +105,11 @@ Channel and mode share one byte, with the channel in the high nibble.
 On the first launch, the setup screen will appear. You can:
 1. Manually enter the Station ID (if you know it)
 2. Set the channel (0-2)
-3. Use **Listen for Remote** to clone an existing remote
-4. Press **Done** to start using the app
+3. Set **Shock max** to how long your collar keeps shocking with the remote's button held (hold
+   it once and count; the app stops its own shock at the same point, *off* disables the cutoff)
+4. Set **Vibration** to how strongly the Flipper should buzz during a shock (or *off*)
+5. Use **Listen for Remote** to clone an existing remote
+6. Press **Done** to start using the app
 
 Settings are automatically saved and will be restored on the next launch.
 

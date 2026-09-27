@@ -3,11 +3,11 @@
 
 #include "caixianlin_types.h"
 
-// Load Station ID and channel from persistent storage
-// Returns true if loaded successfully
+// Load Station ID, channel, TX timings, shock cutoff and vibration strength from persistent storage
+// Returns true if at least Station ID and channel were loaded
 bool caixianlin_storage_load(CaixianlinRemoteApp* app);
 
-// Save current Station ID and channel to persistent storage
+// Save Station ID, channel, TX timings, shock cutoff and vibration strength to persistent storage
 void caixianlin_storage_save(CaixianlinRemoteApp* app);
 
 #endif // CAIXIANLIN_STORAGE_H

@@ -12,16 +12,19 @@ A Flipper Zero application to control CaiXianlin shock collar.
 - **Adjustable strength** (0–99)
 - **Channels** (0–2)
 - **Clone/Listen mode** – Capture Station ID, channel and the exact pulse timings from an existing remote controller / hub
-- **Persistent settings** – Station ID, channel and learned timings are saved
+- **Haptic feedback with shock cutoff** – The Flipper vibrates while it transmits a shock, at the strength set by *Vibration* (off to 100 %); when the collar's cutoff (*Shock max* setting, typically 10 s) is reached the vibration and the shock stop until OK is pressed again
+- **Persistent settings** – Station ID, channel, learned timings, shock cutoff and vibration strength are saved
 
 ## First Launch
 
 On the first launch, the setup screen will appear. You can:
 1. Manually enter the Station ID (if you know it)
 2. Set the channel (0-2)
-3. Use **Listen for Remote** to clone an existing remote (press the remote button that controls
+3. Set **Shock max** to how long your collar keeps shocking with the button held
+4. Set **Vibration** to how strongly the Flipper should buzz during a shock
+5. Use **Listen for Remote** to clone an existing remote (press the remote button that controls
    your collar; the app also measures the remote's pulse timings and transmits with them)
-4. Press **Done** to start using the app
+6. Press **Done** to start using the app
 
 If the collar ignores the Flipper, pair it instead: hold the collar's power button until its LED
 flashes fast, then send **Beep** from the app.

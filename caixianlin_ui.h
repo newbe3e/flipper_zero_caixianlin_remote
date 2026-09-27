@@ -18,4 +18,7 @@ void caixianlin_ui_input(InputEvent* event, void* ctx);
 // Process input event for current screen
 void caixianlin_ui_handle_event(CaixianlinRemoteApp* app, InputEvent* event);
 
+// Save a Setup value changed by a held key whose release was not processed
+void caixianlin_ui_flush_setup(CaixianlinRemoteApp* app);
+
 #endif // CAIXIANLIN_UI_H

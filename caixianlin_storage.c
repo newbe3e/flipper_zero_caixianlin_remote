@@ -2,9 +2,9 @@
 #include <storage/storage.h>
 
 // settings.txt holds one line:
-//   station_id,channel[,sync_high,sync_low,one_high,one_low,zero_high,zero_low,end_bits]
-// Files written by older versions only have the first two fields; the timing
-// then stays at the protocol defaults.
+//   station_id,channel[,sync_high,sync_low,one_high,one_low,zero_high,zero_low,end_bits[,shock_max_s[,vibro_level]]]
+// Files written by older versions have fewer fields; the missing values then
+// stay at their defaults.
 #define SETTINGS_BUF_SIZE 96
 
 bool caixianlin_storage_load(CaixianlinRemoteApp* app) {
@@ -20,9 +20,10 @@ bool caixianlin_storage_load(CaixianlinRemoteApp* app) {
             buf[bytes_read] = '\0';
             int station_id, channel;
             unsigned t[7];
+            unsigned shock_max_s, vibro_level;
             int fields = sscanf(
                 buf,
-                "%d,%d,%u,%u,%u,%u,%u,%u,%u",
+                "%d,%d,%u,%u,%u,%u,%u,%u,%u,%u,%u",
                 &station_id,
                 &channel,
                 &t[0],
@@ -31,14 +32,22 @@ bool caixianlin_storage_load(CaixianlinRemoteApp* app) {
                 &t[3],
                 &t[4],
                 &t[5],
-                &t[6]);
+                &t[6],
+                &shock_max_s,
+                &vibro_level);
             if(fields >= 2 && station_id >= 0 && station_id <= 65535 && channel >= 0 &&
                channel <= 15) {
                 app->station_id = (uint16_t)station_id;
                 app->channel = (uint8_t)channel;
                 success = true;
             }
-            if(success && fields == 9) {
+            if(success && fields >= 10 && shock_max_s <= SHOCK_MAX_S_LIMIT) {
+                app->shock_max_s = (uint8_t)shock_max_s;
+            }
+            if(success && fields >= 11 && vibro_level <= VIBRO_LEVEL_MAX) {
+                app->vibro_level = (uint8_t)vibro_level;
+            }
+            if(success && fields >= 9) {
                 bool in_range = t[6] <= PACKET_END_BITS_MAX;
                 for(int k = 0; k < 6; k++) {
                     if(t[k] > TIMING_MAX_US) in_range = false;
@@ -76,7 +85,7 @@ void caixianlin_storage_save(CaixianlinRemoteApp* app) {
         int len = snprintf(
             buf,
             sizeof(buf),
-            "%d,%d,%u,%u,%u,%u,%u,%u,%u",
+            "%d,%d,%u,%u,%u,%u,%u,%u,%u,%u,%u",
             app->station_id,
             app->channel,
             (unsigned)t->sync_high_us,
@@ -85,7 +94,9 @@ void caixianlin_storage_save(CaixianlinRemoteApp* app) {
             (unsigned)t->one_low_us,
             (unsigned)t->zero_high_us,
             (unsigned)t->zero_low_us,
-            (unsigned)t->end_bits);
+            (unsigned)t->end_bits,
+            (unsigned)app->shock_max_s,
+            (unsigned)app->vibro_level);
         if(len > 0 && (size_t)len < sizeof(buf)) {
             storage_file_write(file, buf, (size_t)len);
         }

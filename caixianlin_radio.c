@@ -1,5 +1,6 @@
 #include "caixianlin_radio.h"
 #include "caixianlin_protocol.h"
+#include "caixianlin_haptic.h"
 #include <lib/subghz/devices/cc1101_int/cc1101_int_interconnect.h>
 
 // Initialize radio hardware
@@ -79,6 +80,7 @@ void caixianlin_radio_start_tx(CaixianlinRemoteApp* app) {
     app->tx_start_tick = furi_get_tick();
     app->is_transmitting = true;
     notification_message(app->notifications, &sequence_set_red_255);
+    caixianlin_haptic_on_tx_start(app);
 }
 
 // Stop transmission
@@ -97,6 +99,7 @@ void caixianlin_radio_stop_tx(CaixianlinRemoteApp* app) {
 
     app->is_transmitting = false;
     notification_message(app->notifications, &sequence_reset_red);
+    caixianlin_haptic_on_tx_stop(app);
 }
 
 // RX capture callback

@@ -3,6 +3,7 @@
 #include "caixianlin_radio.h"
 #include "caixianlin_protocol.h"
 #include "caixianlin_ui.h"
+#include "caixianlin_haptic.h"
 
 // Main entry point
 int32_t caixianlin_remote_app(void* p) {
@@ -30,6 +31,7 @@ int32_t caixianlin_remote_app(void* p) {
 
     // Initialize modules
     caixianlin_ui_init(app);
+    caixianlin_haptic_init(app);
     caixianlin_radio_init(app);
 
     // Main event loop
@@ -37,6 +39,13 @@ int32_t caixianlin_remote_app(void* p) {
     while(app->running) {
         if(furi_message_queue_get(app->event_queue, &event, 100) == FuriStatusOk) {
             caixianlin_ui_handle_event(app, &event);
+            view_port_update(app->view_port);
+        }
+
+        // Shock cutoff reached: stop transmitting like the real remote would
+        // (the timer callback must not touch the radio itself)
+        if(app->is_transmitting && app->shock_timed_out) {
+            caixianlin_radio_stop_tx(app);
             view_port_update(app->view_port);
         }
 
@@ -50,8 +59,13 @@ int32_t caixianlin_remote_app(void* p) {
         }
     }
 
+    // A Setup value stepped by a held key is saved on its release; if the app
+    // exited before that release arrived, save it now
+    caixianlin_ui_flush_setup(app);
+
     // Cleanup modules
-    caixianlin_radio_deinit(app);
+    caixianlin_radio_deinit(app); // stops TX, which also stops the haptics
+    caixianlin_haptic_deinit(app);
     caixianlin_ui_deinit(app);
 
     // Close Flipper resources

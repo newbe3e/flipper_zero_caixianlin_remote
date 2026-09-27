@@ -5,6 +5,14 @@
 
 // Forward declarations for internal functions
 static void handle_setup_input(CaixianlinRemoteApp* app, InputEvent* event);
+
+// Write a value stepped by a held Left/Right if its release was not seen yet
+void caixianlin_ui_flush_setup(CaixianlinRemoteApp* app) {
+    if(app->setup_dirty) {
+        app->setup_dirty = false;
+        caixianlin_storage_save(app);
+    }
+}
 static void handle_listen_input(CaixianlinRemoteApp* app, InputEvent* event);
 static void handle_main_input(CaixianlinRemoteApp* app, InputEvent* event);
 
@@ -122,15 +130,53 @@ void caixianlin_ui_draw(Canvas* canvas, void* ctx) {
                 canvas_set_color(canvas, ColorBlack);
             }
         } else {
-            snprintf(buf, sizeof(buf), "Station ID: %d", app->station_id);
-            draw_menu_item(canvas, buf, 13, app->setup_selected == 0);
+            // Menu rows; the list scrolls so the selected item is always visible
+            static const int slot_y[SETUP_VISIBLE_ITEMS] = {13, 25, 37, 49}; // rows share a border line
+            int first = app->setup_first_visible;
+            for(int slot = 0; slot < SETUP_VISIBLE_ITEMS; slot++) {
+                int item = first + slot;
+                if(item >= SetupItemCount) break;
+                switch(item) {
+                case SetupItemStationId:
+                    snprintf(buf, sizeof(buf), "Station ID: %d", app->station_id);
+                    break;
+                case SetupItemChannel:
+                    snprintf(buf, sizeof(buf), "Channel: %d", app->channel);
+                    break;
+                case SetupItemShockMax:
+                    if(app->shock_max_s) {
+                        snprintf(buf, sizeof(buf), "Shock max: %us", (unsigned)app->shock_max_s);
+                    } else {
+                        snprintf(buf, sizeof(buf), "Shock max: off");
+                    }
+                    break;
+                case SetupItemVibration:
+                    if(app->vibro_level) {
+                        snprintf(
+                            buf,
+                            sizeof(buf),
+                            "Vibration: %u%%",
+                            (unsigned)app->vibro_level * 100 / VIBRO_LEVEL_MAX);
+                    } else {
+                        snprintf(buf, sizeof(buf), "Vibration: off");
+                    }
+                    break;
+                case SetupItemListen:
+                    snprintf(buf, sizeof(buf), "Listen for Remote");
+                    break;
+                default:
+                    snprintf(buf, sizeof(buf), "Done");
+                    break;
+                }
+                draw_menu_item(canvas, buf, slot_y[slot], app->setup_selected == item);
+            }
 
-            snprintf(buf, sizeof(buf), "Channel: %d", app->channel);
-            draw_menu_item(canvas, buf, 25, app->setup_selected == 1);
-
-            draw_menu_item(canvas, "Listen for Remote", 38, app->setup_selected == 2);
-
-            draw_menu_item(canvas, "Done", 51, app->setup_selected == 3);
+            // Scroll bar on the right edge
+            const int track_y = 13, track_h = 49; // spans the four rows
+            int thumb_h = track_h * SETUP_VISIBLE_ITEMS / SetupItemCount;
+            int thumb_y = track_y + (track_h - thumb_h) * first / (SetupItemCount - SETUP_VISIBLE_ITEMS);
+            canvas_draw_line(canvas, 126, track_y, 126, track_y + track_h - 1);
+            canvas_draw_box(canvas, 125, thumb_y, 3, thumb_h);
         }
 
     } else if(app->screen == ScreenListen) {
@@ -238,7 +284,10 @@ void caixianlin_ui_draw(Canvas* canvas, void* ctx) {
 
         // Status
         char* status;
-        if(app->is_transmitting) {
+        if(app->shock_timed_out) {
+            canvas_set_font(canvas, FontSecondary);
+            status = "[ Shock timed out ]";
+        } else if(app->is_transmitting) {
             canvas_set_font(canvas, FontPrimary);
             status = "[ Transmitting! ]";
         } else if(app->tx_failed) {
@@ -291,41 +340,81 @@ static void handle_setup_input(CaixianlinRemoteApp* app, InputEvent* event) {
         }
     } else {
         // Normal setup navigation
-        if(event->type == InputTypeLong && event->key == InputKeyOk && app->setup_selected == 2) {
+        if(event->type == InputTypeLong && event->key == InputKeyOk &&
+           app->setup_selected == SetupItemListen) {
             // Hold OK on "Listen for Remote": forget learned timings, back to defaults
             caixianlin_timing_set_default(&app->timing);
             caixianlin_storage_save(app);
             notification_message(app->notifications, &sequence_success);
             return;
         }
-        if(event->type == InputTypeShort) {
+        bool adjust_key = event->key == InputKeyLeft || event->key == InputKeyRight;
+        if(event->type == InputTypeRelease && adjust_key && app->setup_dirty) {
+            // A held Left/Right changed values step by step; write them once
+            app->setup_dirty = false;
+            caixianlin_storage_save(app);
+            return;
+        }
+        bool adjust_repeat = event->type == InputTypeRepeat && adjust_key;
+        if(event->type == InputTypeShort || adjust_repeat) {
             if(event->key == InputKeyUp) {
                 if(app->setup_selected > 0) app->setup_selected--;
             } else if(event->key == InputKeyDown) {
-                if(app->setup_selected < 3) app->setup_selected++;
-            } else if(event->key == InputKeyLeft) {
-                if(app->setup_selected == 1 && app->channel > 0) {
-                    app->channel--;
-                    caixianlin_storage_save(app);
+                if(app->setup_selected < SetupItemCount - 1) app->setup_selected++;
+            } else if(event->key == InputKeyLeft || event->key == InputKeyRight) {
+                int step = (event->key == InputKeyRight) ? 1 : -1;
+                bool changed = false;
+                if(app->setup_selected == SetupItemChannel) {
+                    int channel = app->channel + step;
+                    if(channel < 0) channel = 0;
+                    if(channel > 2) channel = 2; // channels 0-2 per the protocol
+                    if(channel != app->channel) { // also steps a captured 3..15 back into range
+                        app->channel = (uint8_t)channel;
+                        changed = true;
+                    }
+                } else if(app->setup_selected == SetupItemShockMax) {
+                    int seconds = app->shock_max_s + step;
+                    if(seconds >= 0 && seconds <= SHOCK_MAX_S_LIMIT) {
+                        app->shock_max_s = (uint8_t)seconds;
+                        changed = true;
+                    }
+                } else if(app->setup_selected == SetupItemVibration) {
+                    int level = app->vibro_level + step;
+                    if(level >= 0 && level <= VIBRO_LEVEL_MAX) {
+                        app->vibro_level = (uint8_t)level;
+                        changed = true;
+                    }
                 }
-            } else if(event->key == InputKeyRight) {
-                if(app->setup_selected == 1 && app->channel < 3) {
-                    app->channel++;
-                    caixianlin_storage_save(app);
+                if(changed) {
+                    if(adjust_repeat) {
+                        app->setup_dirty = true; // saved once on release
+                    } else {
+                        caixianlin_storage_save(app);
+                    }
                 }
             } else if(event->key == InputKeyOk) {
-                if(app->setup_selected == 0) {
+                if(app->setup_selected == SetupItemStationId) {
                     app->station_id_backup = app->station_id;
                     app->editing_station_id = true;
                     app->station_id_digit = 0;
-                } else if(app->setup_selected == 2) {
+                } else if(app->setup_selected == SetupItemListen) {
+                    caixianlin_ui_flush_setup(app);
                     app->screen = ScreenListen;
                     caixianlin_radio_start_rx(app);
-                } else if(app->setup_selected == 3) {
+                } else if(app->setup_selected == SetupItemDone) {
+                    caixianlin_ui_flush_setup(app);
                     app->screen = ScreenMain;
                 }
             } else if(event->key == InputKeyBack) {
+                caixianlin_ui_flush_setup(app);
                 app->running = false;
+            }
+
+            // Keep the selected item on screen
+            if(app->setup_selected < app->setup_first_visible) {
+                app->setup_first_visible = app->setup_selected;
+            } else if(app->setup_selected >= app->setup_first_visible + SETUP_VISIBLE_ITEMS) {
+                app->setup_first_visible = app->setup_selected - (SETUP_VISIBLE_ITEMS - 1);
             }
         }
     }
@@ -371,6 +460,7 @@ static void handle_main_input(CaixianlinRemoteApp* app, InputEvent* event) {
             caixianlin_radio_start_tx(app);
         } else if(event->type == InputTypeRelease) {
             caixianlin_radio_stop_tx(app);
+            app->shock_timed_out = false;
         }
     } else if(event->type == InputTypeShort) {
         if(event->key == InputKeyRight) {
@@ -409,9 +499,11 @@ static void handle_main_input(CaixianlinRemoteApp* app, InputEvent* event) {
     if(event->key == InputKeyBack) {
         if(event->type == InputTypeLong) {
             if(app->is_transmitting) caixianlin_radio_stop_tx(app);
+            app->shock_timed_out = false;
             app->screen = ScreenSetup;
         } else if(event->type == InputTypeShort) {
             if(app->is_transmitting) caixianlin_radio_stop_tx(app);
+            app->shock_timed_out = false;
             app->running = false;
         }
     }

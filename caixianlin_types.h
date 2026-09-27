@@ -40,6 +40,16 @@
 
 #define MAX_STRENGTH 99 // the protocol intensity range is 0-99
 
+// Collars cut a continuous shock after a few seconds even if the remote keeps
+// transmitting. The Flipper's vibration mirrors that; set it to what your
+// collar does (0 = never cuts off).
+#define SHOCK_MAX_S_DEFAULT 10
+#define SHOCK_MAX_S_LIMIT   60
+
+// Vibration strength: 0 = off, 1..4 = 25/50/75/100 % (on-ticks per PWM cycle)
+#define VIBRO_LEVEL_MAX     4
+#define VIBRO_LEVEL_DEFAULT VIBRO_LEVEL_MAX
+
 // For RX capture. A sync pulse is recognised by its long HIGH; the LOW window is
 // wide because remotes use 500-800us here and the demodulator shifts edges.
 #define RX_BUFFER_SIZE   2048
@@ -65,6 +75,20 @@ typedef enum {
     ScreenMain,
     ScreenListen,
 } AppScreen;
+
+// Setup menu items (in display order)
+typedef enum {
+    SetupItemStationId,
+    SetupItemChannel,
+    SetupItemShockMax,
+    SetupItemVibration,
+    SetupItemListen,
+    SetupItemDone,
+    SetupItemCount,
+} SetupItem;
+
+#define SETUP_VISIBLE_ITEMS 4 // menu rows that fit under the title
+_Static_assert(SetupItemCount > SETUP_VISIBLE_ITEMS, "Setup list scrolling assumes more items than rows");
 
 // Pulse timings used to build a packet
 typedef struct {
@@ -108,6 +132,8 @@ typedef struct {
     uint8_t channel;
     uint8_t mode;
     uint8_t strength;
+    uint8_t shock_max_s; // Collar's continuous-shock cutoff in seconds (0 = never)
+    uint8_t vibro_level; // Vibration strength 0..VIBRO_LEVEL_MAX
     CaixianlinTiming timing; // Timings used for transmission
 
     TxState tx_state;
@@ -116,11 +142,20 @@ typedef struct {
     bool is_transmitting;
     bool tx_failed; // last TX start was refused (no radio / region lock)
     uint32_t tx_start_tick;
+    FuriTimer* haptic_timer; // Ends the vibration when the collar cuts the shock
+    FuriTimer* vibro_pwm_timer; // Pulses the motor for strengths below 100 %
+    bool vibro_pwm_active; // PWM ticks may drive the motor
+    uint8_t vibro_pwm_phase; // Position in the PWM cycle
+    uint8_t vibro_kick_ticks; // Remaining ticks of the solid kick at the start of a buzz
+    bool haptic_active; // Flipper is vibrating
+    bool shock_timed_out; // Collar cut the shock at shock_max_s; stays set after TX stopped until OK is released or Back is pressed
     bool is_listening;
     bool running;
 
     AppScreen screen;
-    int setup_selected; // 0=Station ID, 1=Channel, 2=Listen, 3=Done
+    int setup_selected; // SetupItem
+    int setup_first_visible; // First Setup item drawn (the list scrolls)
+    bool setup_dirty; // A held Left/Right changed a value that is not saved yet
     int station_id_digit; // Which digit being edited (0-4)
     bool editing_station_id;
     uint16_t station_id_backup; // Restored when a Station ID edit is cancelled
