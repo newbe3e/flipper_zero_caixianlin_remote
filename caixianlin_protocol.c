@@ -48,9 +48,19 @@ static bool caixianlin_protocol_decode_from_work_buffer(CaixianlinRemoteApp* app
     RxCapture* rx = &app->rx_capture;
     bool found = false;
 
+    // A sync pulse is a HIGH/LOW pair, so nothing can be decoded from fewer than
+    // two samples. This also guards the loop bounds below: work_buffer_len is a
+    // size_t, so an expression like `work_buffer_len - 1` would wrap to SIZE_MAX
+    // when the buffer is empty (e.g. right after RX starts and no edges arrived
+    // before the receive timeout, or after a decoded packet consumed the whole
+    // buffer) and the search would read far past the end of work_buffer.
+    if(rx->work_buffer_len < 2) {
+        return false;
+    }
+
     // Search for sync pulse in work buffer
     size_t i;
-    for(i = 0; i < rx->work_buffer_len - 1; i++) {
+    for(i = 0; i + 1 < rx->work_buffer_len; i++) {
         int32_t t1 = rx->work_buffer[i];
         int32_t t2 = rx->work_buffer[i + 1];
 
@@ -72,7 +82,7 @@ static bool caixianlin_protocol_decode_from_work_buffer(CaixianlinRemoteApp* app
         size_t bit_count = 0;
         size_t pos = i + 2;
 
-        while(bit_count < PACKET_BITS && pos < rx->work_buffer_len - 1) {
+        while(bit_count < PACKET_BITS && pos + 1 < rx->work_buffer_len) {
             int32_t high = rx->work_buffer[pos];
             int32_t low = rx->work_buffer[pos + 1];
 
