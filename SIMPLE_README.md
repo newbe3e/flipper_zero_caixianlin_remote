@@ -2,9 +2,11 @@
 
 A Flipper Zero application to control CaiXianlin shock collar.
 
-**WARNING:** This application is intended for **educational and research purposes only**.
+**WARNING:** This application is intended for **educational and research purposes**, and for use
+only with people who can and do give informed consent and can withdraw it at any time.
 
-**NOTE:** I don't endorse use of these devices on any animals. You do you, but I'd never use this device on an animal.
+**Do not use this software, or anything built with it, on animals** or on any being that cannot
+consent. This is a condition of the license (see [LICENSE](LICENSE)), not just a request.
 
 ## Features
 

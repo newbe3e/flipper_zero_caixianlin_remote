@@ -1,6 +1,7 @@
 1.3:
 - "Vibro by strength" setting: the vibration follows the shock strength on a logarithmic curve between the motor's 25 % floor and the "Vibration" setting (needs "Vibration" above 25 %)
 - vibration strength is now pulsed in 1 % steps with a solid kick-start, so lower levels start reliably and scale smoothly
+- license: this fork adds a condition forbidding use on animals or any being that cannot give informed consent
 
 1.2:
 - haptic feedback: the Flipper vibrates while it transmits a shock; at the collar's cutoff (new "Shock max" setting, default 10 s) the vibration and the shock stop until OK is pressed again
