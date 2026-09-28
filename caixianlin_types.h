@@ -82,6 +82,7 @@ typedef enum {
     SetupItemChannel,
     SetupItemShockMax,
     SetupItemVibration,
+    SetupItemVibroScale,
     SetupItemListen,
     SetupItemDone,
     SetupItemCount,
@@ -133,7 +134,8 @@ typedef struct {
     uint8_t mode;
     uint8_t strength;
     uint8_t shock_max_s; // Collar's continuous-shock cutoff in seconds (0 = never)
-    uint8_t vibro_level; // Vibration strength 0..VIBRO_LEVEL_MAX
+    uint8_t vibro_level; // Vibration strength 0..VIBRO_LEVEL_MAX (the maximum when scaling)
+    bool vibro_scale; // Vibration follows the shock strength (log curve)
     CaixianlinTiming timing; // Timings used for transmission
 
     TxState tx_state;
@@ -145,7 +147,8 @@ typedef struct {
     FuriTimer* haptic_timer; // Ends the vibration when the collar cuts the shock
     FuriTimer* vibro_pwm_timer; // Pulses the motor for strengths below 100 %
     bool vibro_pwm_active; // PWM ticks may drive the motor
-    uint8_t vibro_pwm_phase; // Position in the PWM cycle
+    uint8_t vibro_duty; // Percent of time the motor is powered during this buzz
+    uint8_t vibro_acc; // Sigma-delta accumulator of the PWM
     uint8_t vibro_kick_ticks; // Remaining ticks of the solid kick at the start of a buzz
     bool haptic_active; // Flipper is vibrating
     bool shock_timed_out; // Collar cut the shock at shock_max_s; stays set after TX stopped until OK is released or Back is pressed

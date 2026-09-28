@@ -5,7 +5,8 @@
 
 // Haptic feedback and shock cutoff: the Flipper vibrates while a shock is
 // transmitted, at the strength set by app->vibro_level (software PWM on the
-// motor pin; stealth mode mutes it). Collars (and remotes) cut a continuous
+// motor pin; stealth mode mutes it), optionally scaled by the shock strength
+// on a logarithmic curve (app->vibro_scale). Collars (and remotes) cut a continuous
 // shock after a few seconds even if the button stays pressed, so after
 // app->shock_max_s the vibration stops and app->shock_timed_out is raised; the
 // main loop then stops the transmission as well, like the real remote would,

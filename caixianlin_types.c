@@ -33,6 +33,7 @@ void app_init(CaixianlinRemoteApp* app) {
     app->strength = 5;
     app->shock_max_s = SHOCK_MAX_S_DEFAULT;
     app->vibro_level = VIBRO_LEVEL_DEFAULT;
+    app->vibro_scale = false;
     caixianlin_timing_set_default(&app->timing);
     caixianlin_timing_set_default(&app->rx_capture.captured_timing);
     app->running = true;

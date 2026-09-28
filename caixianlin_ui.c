@@ -161,6 +161,10 @@ void caixianlin_ui_draw(Canvas* canvas, void* ctx) {
                         snprintf(buf, sizeof(buf), "Vibration: off");
                     }
                     break;
+                case SetupItemVibroScale:
+                    snprintf(
+                        buf, sizeof(buf), "Vibro by strength: %s", app->vibro_scale ? "on" : "off");
+                    break;
                 case SetupItemListen:
                     snprintf(buf, sizeof(buf), "Listen for Remote");
                     break;
@@ -382,6 +386,12 @@ static void handle_setup_input(CaixianlinRemoteApp* app, InputEvent* event) {
                     int level = app->vibro_level + step;
                     if(level >= 0 && level <= VIBRO_LEVEL_MAX) {
                         app->vibro_level = (uint8_t)level;
+                        changed = true;
+                    }
+                } else if(app->setup_selected == SetupItemVibroScale) {
+                    bool scale = step > 0;
+                    if(scale != app->vibro_scale) {
+                        app->vibro_scale = scale;
                         changed = true;
                     }
                 }
